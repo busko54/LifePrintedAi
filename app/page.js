@@ -5,23 +5,32 @@ export default function Home() {
   const [file, setFile] = useState(null)
   const [loading, setLoading] = useState(false)
   const [dragOver, setDragOver] = useState(false)
+  const [platform, setPlatform] = useState(null)
+
+  const platforms = [
+    { id: 'chatgpt', label: 'ChatGPT', icon: '🤖', color: '#10a37f', instructions: 'chatgpt.com → Settings → Data Controls → Export' },
+    { id: 'claude', label: 'Claude', icon: '✦', color: '#c94f2a', instructions: 'claude.ai → Settings → Privacy → Export Data' },
+    { id: 'gemini', label: 'Gemini', icon: '♊', color: '#4285f4', instructions: 'myactivity.google.com → Export → Gemini' },
+    { id: 'grok', label: 'Grok', icon: '𝕏', color: '#000000', instructions: 'x.com → Settings → Privacy → Export Data' },
+  ]
 
   const handleFile = (f) => {
-    if (f && (f.name.endsWith('.json') || f.name.endsWith('.html'))) {
+    if (f && (f.name.endsWith('.json') || f.name.endsWith('.html') || f.name.endsWith('.zip'))) {
       setFile(f)
     } else {
-      alert('Please upload a .json or .html file from ChatGPT export')
+      alert('Please upload a .json or .html file from your AI export')
     }
   }
 
   const handleGenerate = async () => {
-    if (!file) return alert('Please upload your ChatGPT export first')
+    if (!platform) return alert('Please select which AI platform your export is from')
+    if (!file) return alert('Please upload your export file first')
     setLoading(true)
     const text = await file.text()
     const res = await fetch('/api/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: text, filename: file.name }),
+      body: JSON.stringify({ content: text, filename: file.name, platform: platform }),
     })
     const data = await res.json()
     if (data.error) {
@@ -52,7 +61,7 @@ export default function Home() {
         </span>
         <div style={{ display: 'flex', gap: 36, alignItems: 'center' }}>
           <a href="#how" style={{ fontSize: 14, color: 'var(--muted)', textDecoration: 'none' }}>How it works</a>
-          <a href="#upload" style={{ background: 'var(--ink)', color: 'var(--paper)', padding: '10px 22px', borderRadius: 2, fontSize: 12, letterSpacing: '0.08em', textTransform: 'uppercase', textDecoration: 'none' }}>Try it free</a>
+          <a href="#upload" style={{ background: 'var(--ink)', color: 'var(--paper)', padding: '10px 22px', borderRadius: 2, fontSize: 12, letterSpacing: '0.08em', textTransform: 'uppercase', textDecoration: 'none' }}>Try it — $10</a>
         </div>
       </nav>
 
@@ -61,46 +70,73 @@ export default function Home() {
         <div style={{ padding: '80px 60px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
           <p style={{ fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'var(--accent)', marginBottom: 28, display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ display: 'block', width: 32, height: 1, background: 'var(--accent)' }} />
-            Turn your ChatGPT history into
+            Turn your AI history into
           </p>
           <h1 style={{ fontFamily: 'Playfair Display, serif', fontSize: 'clamp(44px, 5vw, 72px)', fontWeight: 900, lineHeight: 1.05, letterSpacing: '-1.5px', marginBottom: 28 }}>
             A book<br />about <em style={{ fontStyle: 'italic', color: 'var(--accent)' }}>you.</em>
           </h1>
-          <p style={{ fontSize: 17, lineHeight: 1.7, color: 'var(--muted)', maxWidth: 420, marginBottom: 48 }}>
-            Upload your ChatGPT export. We strip the noise, find what actually mattered, and turn it into chapters, insights, and patterns.
+          <p style={{ fontSize: 17, lineHeight: 1.7, color: 'var(--muted)', maxWidth: 420, marginBottom: 40 }}>
+            Upload your ChatGPT, Claude, Gemini, or Grok export. We find what actually mattered and turn it into chapters, insights, and patterns.
           </p>
 
-          <div
-            id="upload"
-            onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={(e) => { e.preventDefault(); setDragOver(false); handleFile(e.dataTransfer.files[0]) }}
-            onClick={() => document.getElementById('fileInput').click()}
-            style={{ border: `1.5px dashed ${dragOver ? 'var(--accent)' : 'var(--border)'}`, borderRadius: 4, padding: '36px 32px', background: dragOver ? '#f0ead8' : 'var(--cream)', cursor: 'pointer', transition: 'all 0.2s', maxWidth: 440, marginBottom: 16 }}
-          >
-            <input id="fileInput" type="file" accept=".json,.html" style={{ display: 'none' }} onChange={(e) => handleFile(e.target.files[0])} />
-            <p style={{ fontSize: 32, marginBottom: 12 }}>📂</p>
-            <h3 style={{ fontFamily: 'Playfair Display, serif', fontSize: 17, fontWeight: 700, marginBottom: 6 }}>
-              {file ? `✓ ${file.name}` : 'Drop your ChatGPT export here'}
-            </h3>
-            <p style={{ fontSize: 13, color: 'var(--muted)' }}>
-              {file ? 'Ready to generate' : 'Click to browse · .json or .html'}
-            </p>
-            <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-              {['JSON', 'HTML'].map(t => (
-                <span key={t} style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', background: 'var(--border)', padding: '4px 10px', borderRadius: 2, color: 'var(--muted)' }}>{t}</span>
+          {/* Platform Selector */}
+          <div style={{ marginBottom: 24 }}>
+            <p style={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--muted)', marginBottom: 12 }}>Step 1 — Select your AI platform</p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, maxWidth: 440 }}>
+              {platforms.map(p => (
+                <button
+                  key={p.id}
+                  onClick={() => setPlatform(p.id)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '14px 16px', borderRadius: 4, cursor: 'pointer',
+                    border: platform === p.id ? `2px solid ${p.color}` : '2px solid var(--border)',
+                    background: platform === p.id ? `${p.color}10` : 'var(--cream)',
+                    transition: 'all 0.2s', textAlign: 'left'
+                  }}
+                >
+                  <span style={{ fontSize: 20 }}>{p.icon}</span>
+                  <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)' }}>{p.label}</span>
+                </button>
               ))}
+            </div>
+            {platform && (
+              <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 10, padding: '8px 12px', background: 'var(--cream)', borderRadius: 4, maxWidth: 440 }}>
+                📥 Export: {platforms.find(p => p.id === platform)?.instructions}
+              </p>
+            )}
+          </div>
+
+          {/* Upload */}
+          <div style={{ marginBottom: 8 }}>
+            <p style={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--muted)', marginBottom: 12 }}>Step 2 — Upload your export file</p>
+            <div
+              id="upload"
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={(e) => { e.preventDefault(); setDragOver(false); handleFile(e.dataTransfer.files[0]) }}
+              onClick={() => document.getElementById('fileInput').click()}
+              style={{ border: `1.5px dashed ${dragOver ? 'var(--accent)' : 'var(--border)'}`, borderRadius: 4, padding: '28px 32px', background: dragOver ? '#f0ead8' : 'var(--cream)', cursor: 'pointer', transition: 'all 0.2s', maxWidth: 440 }}
+            >
+              <input id="fileInput" type="file" accept=".json,.html" style={{ display: 'none' }} onChange={(e) => handleFile(e.target.files[0])} />
+              <p style={{ fontSize: 28, marginBottom: 10 }}>📂</p>
+              <h3 style={{ fontFamily: 'Playfair Display, serif', fontSize: 16, fontWeight: 700, marginBottom: 6 }}>
+                {file ? `✓ ${file.name}` : 'Drop your export file here'}
+              </h3>
+              <p style={{ fontSize: 13, color: 'var(--muted)' }}>
+                {file ? 'Ready to generate' : 'Click to browse · .json or .html'}
+              </p>
             </div>
           </div>
 
           <button
             onClick={handleGenerate}
-            style={{ maxWidth: 440, width: '100%', background: 'var(--ink)', color: 'var(--paper)', border: 'none', padding: '18px 32px', fontSize: 13, letterSpacing: '0.12em', textTransform: 'uppercase', fontFamily: 'DM Sans, sans-serif', fontWeight: 500, cursor: 'pointer', borderRadius: 2, marginBottom: 12 }}
+            style={{ maxWidth: 440, width: '100%', background: 'var(--ink)', color: 'var(--paper)', border: 'none', padding: '18px 32px', fontSize: 13, letterSpacing: '0.12em', textTransform: 'uppercase', fontFamily: 'DM Sans, sans-serif', fontWeight: 500, cursor: 'pointer', borderRadius: 2, marginBottom: 12, marginTop: 16 }}
           >
-            Generate My Life Book →
+            Generate My Life Book — $10 →
           </button>
           <p style={{ fontSize: 12, color: 'var(--muted)', maxWidth: 440 }}>
-            Your file is never stored or shared. Processed and deleted instantly.
+            🔒 Your file is never stored or shared. One-time payment, instant delivery.
           </p>
         </div>
 
@@ -133,8 +169,8 @@ export default function Home() {
                 ))}
               </div>
               <div>
-                <p style={{ fontSize: 9, letterSpacing: '0.2em', textTransform: 'uppercase', color: 'var(--accent)', marginBottom: 10 }}>Patterns</p>
-                {['🔁 Start → Quit → Restart', '😟 Anxiety spikes in Q4', '💡 Ideas without follow-through'].map((p, i) => (
+                <p style={{ fontSize: 9, letterSpacing: '0.2em', textTransform: 'uppercase', color: 'var(--accent)', marginBottom: 10 }}>Platforms</p>
+                {['🤖 ChatGPT', '✦ Claude', '♊ Gemini', '𝕏 Grok'].map((p, i) => (
                   <span key={i} style={{ display: 'inline-flex', fontSize: 10, background: 'var(--ink)', color: 'var(--paper)', padding: '4px 10px', borderRadius: 2, margin: '0 4px 6px 0' }}>{p}</span>
                 ))}
               </div>
@@ -150,10 +186,10 @@ export default function Home() {
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 24, maxWidth: 960, margin: '0 auto' }}>
           {[
-            ['1', 'Upload', 'Export your ChatGPT history as JSON or HTML and drop it in. No account needed.', 'var(--ink)'],
-            ['2', 'Filter', 'We cut the noise — random questions, small talk, junk. Only meaningful conversations stay.', 'var(--accent)'],
-            ['3', 'Analyze', 'AI clusters your chats into themes: career, money, relationships, identity, goals.', '#b8922a'],
-            ['4', 'Download', 'Get a clean PDF with your chapters, insights, and patterns. Yours to keep.', 'var(--ink)'],
+            ['1', 'Choose Platform', 'Select ChatGPT, Claude, Gemini, or Grok and export your history.', 'var(--ink)'],
+            ['2', 'Upload', 'Drop your export file in. We filter out noise and keep what matters.', 'var(--accent)'],
+            ['3', 'Analyze', 'AI finds your patterns, themes, struggles, and growth across all your chats.', '#b8922a'],
+            ['4', 'Get Your Book', 'Chapters, insights, patterns — delivered as a beautiful PDF for $10.', 'var(--ink)'],
           ].map(([num, title, desc, bg]) => (
             <div key={num} style={{ textAlign: 'center', padding: '0 16px' }}>
               <div style={{ width: 56, height: 56, borderRadius: '50%', background: bg, color: 'var(--paper)', fontFamily: 'Playfair Display, serif', fontSize: 20, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>{num}</div>
@@ -166,13 +202,14 @@ export default function Home() {
 
       <div style={{ background: 'var(--ink)', padding: '100px 60px', textAlign: 'center' }}>
         <h2 style={{ fontFamily: 'Playfair Display, serif', fontSize: 'clamp(36px, 5vw, 56px)', fontWeight: 900, color: 'var(--paper)', letterSpacing: '-1.5px', lineHeight: 1.05, maxWidth: 640, margin: '0 auto 24px' }}>
-          Your chats have been trying to tell you <em style={{ color: 'var(--accent)', fontStyle: 'italic' }}>something.</em>
+          Your AI chats have been trying to tell you <em style={{ color: 'var(--accent)', fontStyle: 'italic' }}>something.</em>
         </h2>
-        <p style={{ fontSize: 16, color: 'rgba(245,240,232,0.5)', marginBottom: 48 }}>It takes 60 seconds to find out what.</p>
+        <p style={{ fontSize: 16, color: 'rgba(245,240,232,0.5)', marginBottom: 12 }}>It takes 60 seconds to find out what.</p>
+        <p style={{ fontSize: 14, color: 'var(--accent)', marginBottom: 48, fontWeight: 500 }}>Works with ChatGPT · Claude · Gemini · Grok</p>
         <a href="#upload" style={{ display: 'inline-block', background: 'var(--accent)', color: 'var(--paper)', padding: '20px 48px', fontSize: 13, letterSpacing: '0.14em', textTransform: 'uppercase', fontFamily: 'DM Sans, sans-serif', fontWeight: 500, borderRadius: 2, textDecoration: 'none' }}>
-          Upload your history — it is free
+          Get My Life Book — $10
         </a>
-        <p style={{ display: 'block', marginTop: 18, fontSize: 12, color: 'rgba(245,240,232,0.3)' }}>No account. No storage. Your file stays private.</p>
+        <p style={{ display: 'block', marginTop: 18, fontSize: 12, color: 'rgba(245,240,232,0.3)' }}>One-time payment. No account. Your file stays private.</p>
       </div>
 
       <footer style={{ padding: '32px 60px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', fontSize: 13, color: 'var(--muted)' }}>
