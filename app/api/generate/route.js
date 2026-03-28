@@ -58,7 +58,7 @@ function filterMeaningful(conversations) {
 
 export async function POST(req) {
   try {
-    const { content, filename } = await req.json()
+    const { content, filename, platform } = await req.json()
 
     if (!content || content.length < 100) {
       return Response.json({ error: 'File too small or empty' }, { status: 400 })
