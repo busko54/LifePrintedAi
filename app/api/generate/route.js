@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
-function parseConversations(content, filename) {
+function parseConversations(content, filename, platform) {
   let conversations = []
 
   try {
