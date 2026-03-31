@@ -1,47 +1,56 @@
 'use client'
 import { useState } from 'react'
 
-function extractConversations(content, filename) {
-  let conversations = []
+function extractAndFilterMessages(content, filename) {
+  const personalKeywords = [
+    'i feel', 'i felt', 'i think', 'i am', "i'm", 'im ',
+    'anxiety', 'anxious', 'depressed', 'stressed', 'overwhelmed', 'lonely',
+    'i hate', 'i love', 'i want', 'i need', 'i wish',
+    'scared', 'worried', 'nervous', 'excited', 'happy', 'sad', 'angry',
+    'career', 'job', 'quit', 'fired', 'salary', 'money', 'debt', 'broke',
+    'relationship', 'girlfriend', 'boyfriend', 'wife', 'husband',
+    'family', 'parents', 'mom', 'dad', 'friend', 'alone',
+    'future', 'goal', 'dream', 'purpose', 'meaning', 'life',
+    'should i', 'help me', 'what if', 'advice', 'not sure',
+    'startup', 'business', 'idea', 'build', 'launch',
+    'therapy', 'mental health', 'confidence', 'self',
+    'regret', 'mistake', 'failed', 'success', 'proud',
+    'change', 'stuck', 'lost', 'confused', 'direction',
+    'tired', 'exhausted', 'burned out', 'motivated', 'inspired',
+    'identity', 'who am i', 'worth', 'value', 'deserve'
+  ]
+
+  const technicalIndicators = [
+    'function(', 'const ', 'let ', 'var ', 'return ',
+    'console.log', 'import ', 'export ', 'async ',
+    '```', 'SELECT ', 'FROM ', 'WHERE ',
+    'npm ', 'pip ', 'git ', 'docker',
+    'error:', 'exception', 'undefined', 'null',
+    'chmod', 'sudo', 'bash', 'python', 'javascript'
+  ]
+
+  let allPersonalMessages = []
+  let totalMessages = 0
+  let totalConversations = 0
+
   try {
     if (filename.endsWith('.json')) {
       const data = JSON.parse(content)
       const items = Array.isArray(data) ? data : [data]
+      totalConversations = items.length
 
       for (const convo of items) {
-        const messages = []
         const title = convo.title || convo.name || 'Untitled'
+        const convoMessages = []
 
+        // Extract all user messages from this conversation
         if (convo.mapping) {
-          // Get ALL user messages from the conversation
-          const allUserMessages = []
           for (const node of Object.values(convo.mapping)) {
             if (node.message?.content?.parts && node.message.author?.role === 'user') {
               const text = node.message.content.parts.join(' ').trim()
-              if (text.length > 30) allUserMessages.push(text)
-            }
-          }
-
-          if (allUserMessages.length > 0) {
-            // Sample throughout the conversation
-            // Take from beginning, middle, and end
-            const total = allUserMessages.length
-
-            if (total <= 20) {
-              // Short conversation — take everything
-              messages.push(...allUserMessages)
-            } else {
-              // Long conversation — sample 20 messages spread throughout
-              const step = Math.floor(total / 20)
-              for (let i = 0; i < total; i += step) {
-                if (messages.length < 20) {
-                  messages.push(allUserMessages[i])
-                }
-              }
-              // Always include the last few messages
-              const last5 = allUserMessages.slice(-5)
-              for (const msg of last5) {
-                if (!messages.includes(msg)) messages.push(msg)
+              if (text.length > 30) {
+                totalMessages++
+                convoMessages.push({ title, text })
               }
             }
           }
@@ -51,66 +60,62 @@ function extractConversations(content, filename) {
           for (const msg of convo.messages) {
             if (msg.role === 'user' || msg.author === 'user') {
               const text = (msg.content || msg.text || '').trim()
-              if (text.length > 30) messages.push(text)
+              if (text.length > 30) {
+                totalMessages++
+                convoMessages.push({ title, text })
+              }
             }
           }
         }
 
-        if (messages.length > 0) {
-          conversations.push({ title, messages })
+        // Score each message — keep only personal ones
+        for (const msg of convoMessages) {
+          const lower = msg.text.toLowerCase()
+          const personalScore = personalKeywords.filter(k => lower.includes(k)).length
+          const techScore = technicalIndicators.filter(k => lower.includes(k)).length
+
+          // Only keep if personal and not too technical
+          if (personalScore >= 1 && techScore < 3) {
+            allPersonalMessages.push({
+              ...msg,
+              personalScore,
+              techScore
+            })
+          }
         }
       }
     }
   } catch (e) {
     console.error('Parse error:', e)
   }
-  return conversations
-}
 
-function filterMeaningful(conversations) {
-  const personalKeywords = [
-    'i feel', 'i felt', 'i think', 'i am', "i'm", 'im ',
-    'anxiety', 'depressed', 'stressed', 'overwhelmed', 'lonely',
-    'i hate', 'i love', 'i want', 'i need', 'i wish',
-    'scared', 'worried', 'nervous', 'excited', 'happy', 'sad',
-    'career', 'job', 'quit', 'fired', 'salary', 'money', 'debt', 'broke',
-    'relationship', 'girlfriend', 'boyfriend', 'wife', 'husband', 'family',
-    'parents', 'mom', 'dad', 'friend', 'alone',
-    'future', 'goal', 'dream', 'purpose', 'meaning', 'life',
-    'should i', 'help me', 'what if', 'advice',
-    'startup', 'business', 'idea', 'build',
-    'therapy', 'mental health', 'self', 'identity', 'confidence',
-    'regret', 'mistake', 'failed', 'success', 'proud',
-    'change', 'stuck', 'lost', 'confused', 'direction'
-  ]
+  // Sort by most personal first
+  allPersonalMessages.sort((a, b) => b.personalScore - a.personalScore)
 
-  const technicalIndicators = [
-    'function(', 'const ', 'let ', 'var ', 'return ',
-    'console.log', 'import ', 'export ', 'async ',
-    '```', 'http://', 'https://', 'SELECT ', 'FROM ',
-    'npm ', 'pip ', 'git ', 'docker', 'kubernetes',
-    'error:', 'exception', 'stack trace', 'undefined'
-  ]
+  console.log(`Total messages in file: ${totalMessages}`)
+  console.log(`Personal messages found: ${allPersonalMessages.length}`)
 
-  return conversations
-    .map(convo => {
-      const fullText = (convo.title + ' ' + convo.messages.join(' ')).toLowerCase()
+  // Take top 200 most personal messages
+  const top200 = allPersonalMessages.slice(0, 200)
 
-      // Score personal content
-      const personalScore = personalKeywords.filter(k => fullText.includes(k)).length
+  // Group back into conversation-like chunks for the API
+  const grouped = {}
+  for (const msg of top200) {
+    if (!grouped[msg.title]) grouped[msg.title] = []
+    grouped[msg.title].push(msg.text)
+  }
 
-      // Score technical content
-      const techScore = technicalIndicators.filter(k => fullText.includes(k)).length
+  const conversations = Object.entries(grouped).map(([title, messages]) => ({
+    title,
+    messages
+  }))
 
-      return { ...convo, personalScore, techScore }
-    })
-    .filter(convo => {
-      if (convo.personalScore < 2) return false
-      if (convo.techScore > convo.personalScore * 2) return false
-      return true
-    })
-    .sort((a, b) => b.personalScore - a.personalScore) // most personal first
-    .slice(0, 50) // top 50 most personal
+  return {
+    conversations,
+    totalMessages,
+    totalConversations,
+    personalMessagesFound: allPersonalMessages.length
+  }
 }
 
 export default function Home() {
@@ -142,35 +147,55 @@ export default function Home() {
     setLoading(true)
     try {
       let allConversations = []
+      let grandTotalMessages = 0
+      let grandTotalConversations = 0
+      let totalPersonalFound = 0
 
-      // Process each file
       for (let i = 0; i < files.length; i++) {
         const file = files[i]
         setLoadingMsg(`Reading file ${i + 1} of ${files.length}: ${file.name}...`)
+
         const text = await file.text()
-        const convos = extractConversations(text, file.name)
-        allConversations.push(...convos)
-        console.log(`File ${i + 1}: found ${convos.length} conversations`)
+
+        setLoadingMsg(`Scanning every message in ${file.name}...`)
+        const result = extractAndFilterMessages(text, file.name)
+
+        allConversations.push(...result.conversations)
+        grandTotalMessages += result.totalMessages
+        grandTotalConversations += result.totalConversations
+        totalPersonalFound += result.personalMessagesFound
+
+        console.log(`File ${i + 1}: ${result.totalMessages} total messages, ${result.personalMessagesFound} personal`)
       }
 
-      setLoadingMsg(`Filtering ${allConversations.length} conversations for personal content...`)
-      const meaningful = filterMeaningful(allConversations)
+      setLoadingMsg(`Found ${totalPersonalFound} personal messages across ${grandTotalMessages} total. Selecting the best 200...`)
 
-      console.log(`Total conversations: ${allConversations.length}`)
-      console.log(`After filtering: ${meaningful.length} meaningful conversations`)
-
-      if (meaningful.length < 3) {
-        alert('Not enough personal conversations found. Try uploading more files or a different export.')
+      if (allConversations.length === 0) {
+        alert('No personal conversations found. Try a different file.')
         setLoading(false)
         return
       }
 
-      setLoadingMsg(`Analyzing ${meaningful.length} personal conversations across ${files.length} file(s)...`)
+      // Limit total messages sent to API to stay under 60s timeout
+      // Take top messages across all files — already sorted by personal score
+      const limitedConversations = []
+      let messageCount = 0
+      for (const convo of allConversations) {
+        if (messageCount >= 200) break
+        const msgs = convo.messages.slice(0, Math.min(convo.messages.length, 20))
+        limitedConversations.push({ ...convo, messages: msgs })
+        messageCount += msgs.length
+      }
+
+      setLoadingMsg(`Analyzing your ${messageCount} most personal messages...`)
+
+      console.log(`Sending ${messageCount} messages across ${limitedConversations.length} conversations to API`)
 
       const payload = {
-        conversations: meaningful,
-        totalCount: allConversations.length,
-        platform: platform
+        conversations: limitedConversations,
+        totalCount: grandTotalConversations,
+        totalMessages: grandTotalMessages,
+        platform
       }
 
       const res = await fetch('/api/generate', {
@@ -215,7 +240,7 @@ export default function Home() {
           <div style={{ width: 240, height: 2, background: 'rgba(255,255,255,0.1)', borderRadius: 2, overflow: 'hidden' }}>
             <div style={{ height: '100%', background: 'var(--accent)', animation: 'loadBar 2.4s ease-in-out infinite' }} />
           </div>
-          <p style={{ fontSize: 13, color: 'rgba(245,240,232,0.4)', letterSpacing: '0.06em' }}>{loadingMsg}</p>
+          <p style={{ fontSize: 13, color: 'rgba(245,240,232,0.4)', letterSpacing: '0.06em', textAlign: 'center', maxWidth: 400, padding: '0 20px' }}>{loadingMsg}</p>
         </div>
       )}
 
@@ -239,7 +264,7 @@ export default function Home() {
             A book<br />about <em style={{ fontStyle: 'italic', color: 'var(--accent)' }}>you.</em>
           </h1>
           <p style={{ fontSize: 17, lineHeight: 1.7, color: 'var(--muted)', maxWidth: 420, marginBottom: 40 }}>
-            Upload your ChatGPT, Claude, Gemini, or Grok export. All your files. We find what actually mattered across your entire AI history.
+            Upload your ChatGPT, Claude, Gemini, or Grok export. We scan every single message and find what actually mattered.
           </p>
 
           <div style={{ marginBottom: 24 }}>
@@ -261,8 +286,8 @@ export default function Home() {
 
           <div style={{ marginBottom: 8 }}>
             <p style={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--muted)', marginBottom: 12 }}>
-              Step 2 — Upload your export files
-              {files.length > 0 && <span style={{ color: 'var(--accent)', marginLeft: 8 }}>({files.length} file{files.length > 1 ? 's' : ''} selected)</span>}
+              Step 2 — Upload your export file
+              {files.length > 0 && <span style={{ color: 'var(--accent)', marginLeft: 8 }}>({files.length} file{files.length > 1 ? 's' : ''} ready)</span>}
             </p>
             <div
               id="upload"
@@ -272,27 +297,17 @@ export default function Home() {
               onClick={() => document.getElementById('fileInput').click()}
               style={{ border: `1.5px dashed ${dragOver ? 'var(--accent)' : 'var(--border)'}`, borderRadius: 4, padding: '28px 32px', background: dragOver ? '#f0ead8' : 'var(--cream)', cursor: 'pointer', transition: 'all 0.2s', maxWidth: 440 }}
             >
-              <input
-                id="fileInput"
-                type="file"
-                accept=".json,.html"
-                multiple
-                style={{ display: 'none' }}
-                onChange={(e) => handleFiles(e.target.files)}
-              />
+              <input id="fileInput" type="file" accept=".json,.html" multiple style={{ display: 'none' }} onChange={(e) => handleFiles(e.target.files)} />
               <p style={{ fontSize: 28, marginBottom: 10 }}>📂</p>
               <h3 style={{ fontFamily: 'Playfair Display, serif', fontSize: 16, fontWeight: 700, marginBottom: 6 }}>
-                {files.length > 0 ? `✓ ${files.length} file${files.length > 1 ? 's' : ''} selected` : 'Drop your export files here'}
+                {files.length > 0 ? `✓ ${files.length} file${files.length > 1 ? 's' : ''} selected` : 'Drop your export file here'}
               </h3>
-              <p style={{ fontSize: 13, color: 'var(--muted)' }}>
-                {files.length > 0 ? `${files.map(f => f.name).join(', ')}` : 'Click to browse · select multiple files · .json or .html'}
+              <p style={{ fontSize: 13, color: 'var(--muted)', wordBreak: 'break-all' }}>
+                {files.length > 0 ? files.map(f => f.name).join(', ') : 'Click to browse · .json or .html'}
               </p>
             </div>
             {files.length > 0 && (
-              <button
-                onClick={() => setFiles([])}
-                style={{ fontSize: 12, color: 'var(--muted)', background: 'none', border: 'none', cursor: 'pointer', marginTop: 8, textDecoration: 'underline' }}
-              >
+              <button onClick={() => setFiles([])} style={{ fontSize: 12, color: 'var(--muted)', background: 'none', border: 'none', cursor: 'pointer', marginTop: 8, textDecoration: 'underline' }}>
                 Clear files
               </button>
             )}
@@ -302,7 +317,7 @@ export default function Home() {
             Generate My Life Book — $10 →
           </button>
           <p style={{ fontSize: 12, color: 'var(--muted)', maxWidth: 440 }}>
-            🔒 Your files are never stored. Processed locally then deleted. One-time payment.
+            🔒 Every message is scanned locally. Nothing stored. One-time payment.
           </p>
         </div>
 
@@ -353,8 +368,8 @@ export default function Home() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 24, maxWidth: 960, margin: '0 auto' }}>
           {[
             ['1', 'Choose Platform', 'Select ChatGPT, Claude, Gemini, or Grok and export your history.', 'var(--ink)'],
-            ['2', 'Upload All Files', 'Drop all your export files in at once. We handle the rest.', 'var(--accent)'],
-            ['3', 'Analyze', 'AI reads your entire history and finds what actually mattered.', '#b8922a'],
+            ['2', 'Upload Your File', 'Drop your export in. We scan every single message locally.', 'var(--accent)'],
+            ['3', 'Deep Analysis', 'AI reads your most personal messages and finds what actually mattered.', '#b8922a'],
             ['4', 'Get Your Book', 'Chapters, insights, patterns — your life decoded for $10.', 'var(--ink)'],
           ].map(([num, title, desc, bg]) => (
             <div key={num} style={{ textAlign: 'center', padding: '0 16px' }}>
@@ -375,7 +390,7 @@ export default function Home() {
         <a href="#upload" style={{ display: 'inline-block', background: 'var(--accent)', color: 'var(--paper)', padding: '20px 48px', fontSize: 13, letterSpacing: '0.14em', textTransform: 'uppercase', fontFamily: 'DM Sans, sans-serif', fontWeight: 500, borderRadius: 2, textDecoration: 'none' }}>
           Get My Life Book — $10
         </a>
-        <p style={{ display: 'block', marginTop: 18, fontSize: 12, color: 'rgba(245,240,232,0.3)' }}>One-time payment. No account. Your files stay private.</p>
+        <p style={{ display: 'block', marginTop: 18, fontSize: 12, color: 'rgba(245,240,232,0.3)' }}>One-time payment. No account. Your file stays private.</p>
       </div>
 
       <footer style={{ padding: '32px 60px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', fontSize: 13, color: 'var(--muted)' }}>
