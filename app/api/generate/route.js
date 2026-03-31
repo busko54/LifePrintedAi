@@ -1,8 +1,15 @@
 export const maxDuration = 60
 
 async function callGemini(prompt) {
+  const apiKey = process.env.GEMINI_API_KEY
+  
+  if (!apiKey) {
+    console.error('GEMINI_API_KEY is not set')
+    return ''
+  }
+
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -12,7 +19,20 @@ async function callGemini(prompt) {
       })
     }
   )
+
   const data = await res.json()
+  
+  if (!res.ok) {
+    console.error('Gemini API error status:', res.status)
+    console.error('Gemini API error body:', JSON.stringify(data))
+    return ''
+  }
+
+  if (!data.candidates) {
+    console.error('Gemini no candidates:', JSON.stringify(data))
+    return ''
+  }
+
   return data.candidates?.[0]?.content?.parts?.[0]?.text || ''
 }
 
@@ -28,16 +48,24 @@ export async function POST(req) {
   try {
     const { conversations, totalCount, platform } = await req.json()
 
+    console.log('Received conversations:', conversations?.length)
+    console.log('Platform:', platform)
+
     if (!conversations || conversations.length < 3) {
       return Response.json({ error: 'Not enough meaningful conversations found.' }, { status: 400 })
     }
 
     const chunks = chunkArray(conversations, 20)
+    console.log('Total chunks to summarize:', chunks.length)
+
     const summaries = []
 
-    for (const chunk of chunks) {
-      const chunkText = chunk.map((c, i) =>
-        `[${i + 1}] Title: ${c.title}\nMessages: ${c.messages.join(' | ')}`
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i]
+      console.log(`Summarizing chunk ${i + 1} of ${chunks.length}`)
+
+      const chunkText = chunk.map((c, idx) =>
+        `[${idx + 1}] Title: ${c.title}\nMessages: ${c.messages.join(' | ')}`
       ).join('\n\n')
 
       const summaryPrompt = `You are summarizing a batch of someone's personal AI conversations.
@@ -54,11 +82,14 @@ Return ONLY a numbered list of sentences, nothing else. Example:
 2. Person is seeking validation for a business idea they are already committed to`
 
       const summary = await callGemini(summaryPrompt)
+      console.log(`Chunk ${i + 1} summary length:`, summary?.length)
       if (summary) summaries.push(summary)
     }
 
+    console.log('Total summaries collected:', summaries.length)
+
     if (summaries.length === 0) {
-      return Response.json({ error: 'Could not summarize conversations. Try again.' }, { status: 500 })
+      return Response.json({ error: 'Gemini API not responding. Check your API key in Vercel environment variables.' }, { status: 500 })
     }
 
     const allSummaries = summaries.join('\n\n')
@@ -111,6 +142,7 @@ Respond ONLY with a valid JSON object, no other text, no markdown backticks:
 }`
 
     const analysisResponse = await callGemini(analysisPrompt)
+    console.log('Analysis response length:', analysisResponse?.length)
 
     if (!analysisResponse) {
       return Response.json({ error: 'AI did not return a response. Try again.' }, { status: 500 })
@@ -122,7 +154,8 @@ Respond ONLY with a valid JSON object, no other text, no markdown backticks:
     return Response.json(result)
 
   } catch (error) {
-    console.error('Error:', error)
-    return Response.json({ error: 'Something went wrong. Please try again.' }, { status: 500 })
+    console.error('Top level error:', error.message)
+    console.error('Stack:', error.stack)
+    return Response.json({ error: error.message || 'Something went wrong.' }, { status: 500 })
   }
 }
