@@ -1,26 +1,52 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400;1,700&family=DM+Sans:wght@300;400;500&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --ink: #0e0c0a;
-  --paper: #f5f0e8;
-  --cream: #ede7d9;
+  --ink: #f5f0e8;
+  --paper: #0f0d0a;
+  --cream: #1a1714;
   --accent: #c94f2a;
-  --muted: #7a7060;
-  --border: #d4cbbf;
+  --gold: #b8922a;
+  --muted: #8a8070;
+  --border: #2a2520;
+  --card: #161310;
 }
 
-* {
+*, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
   background: var(--paper);
   color: var(--ink);
   font-family: 'DM Sans', sans-serif;
+  font-weight: 300;
+  overflow-x: hidden;
 }
 
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=DM+Sans:wght@300;400;500&display=swap');
+::selection {
+  background: var(--accent);
+  color: var(--ink);
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--paper);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
