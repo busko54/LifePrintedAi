@@ -398,14 +398,16 @@ export default function Home() {
         <span>Your data is never stored or shared.</span>
       </footer>
 
-      <style>{`
-        @keyframes loadBar { 0% { width: 0% } 50% { width: 80% } 100% { width: 100% } }
-        @keyframes float { 0%, 100% { transform: rotate(-2deg) translateY(0px); } 50% { transform: rotate(-2deg) translateY(-12px); } }
-        @media (max-width: 768px) {
-          div[style*="gridTemplateColumns: '1fr 1fr'"] { grid-template-columns: 1fr !important; }
-          div[style*="gridTemplateColumns: 'repeat(4"] { grid-template-columns: 1fr 1fr !important; }
-        }
-      `}</style>
+     <style>{`
+  @keyframes loadBar { 0% { width: 0% } 50% { width: 80% } 100% { width: 100% } }
+  @keyframes float { 0%, 100% { transform: rotate(-2deg) translateY(0px); } 50% { transform: rotate(-2deg) translateY(-12px); } }
+  @media (max-width: 768px) {
+    div[style*="gridTemplateColumns: '1fr 1fr'"] { grid-template-columns: 1fr !important; }
+    div[style*="gridTemplateColumns: 'repeat(4"] { grid-template-columns: 1fr 1fr !important; }
+  }
+  body { background: #0f0d0a !important; color: #f5f0e8 !important; }
+  main { background: #0f0d0a !important; }
+`}</style>
     </main>
   )
 }
