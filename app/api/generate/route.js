@@ -1,4 +1,4 @@
-export const maxDuration = 300
+export const maxDuration = 60
 
 async function callOpenAI(prompt, maxTokens = 1000) {
   const apiKey = process.env.OPENAI_API_KEY
@@ -36,33 +36,53 @@ function chunkArray(arr, size) {
   return chunks
 }
 
+function getTimePeriod(timestamp) {
+  if (!timestamp) return null
+  const date = new Date(timestamp * 1000)
+  const year = date.getFullYear()
+  const month = date.getMonth()
+  if (month < 3) return `Early ${year}`
+  if (month < 6) return `Spring ${year}`
+  if (month < 9) return `Summer ${year}`
+  if (month < 12) return `Late ${year}`
+  return `${year}`
+}
+
 export async function POST(req) {
   try {
-    const { conversations, totalCount } = await req.json()
+    const { conversations, totalCount, totalMessages } = await req.json()
 
     if (!conversations || conversations.length === 0) {
       return Response.json({ error: 'No conversations received.' }, { status: 400 })
     }
 
-    console.log(`Received ${conversations.length} conversations to analyze deeply`)
+    console.log(`Received ${conversations.length} conversations`)
 
-    // Step 1 — Collect ALL messages from ALL conversations
+    // Step 1 — Collect all messages with time context
     const allMessages = []
+    const timePeriods = new Set()
+
     for (const convo of conversations) {
+      const period = getTimePeriod(convo.timestamp)
+      if (period) timePeriods.add(period)
+
       for (const msg of convo.messages) {
         if (msg && msg.length > 20) {
           allMessages.push({
             title: convo.title,
-            text: msg
+            text: msg,
+            period: period || 'Unknown period'
           })
         }
       }
     }
 
-    console.log(`Total messages to analyze: ${allMessages.length}`)
+    const sortedPeriods = Array.from(timePeriods).sort()
+    console.log(`Time periods found: ${sortedPeriods.join(', ')}`)
+    console.log(`Total messages: ${allMessages.length}`)
 
-    // Step 2 — Chunk all messages into groups of 50
-    const messageChunks = chunkArray(allMessages, 50)
+    // Step 2 — Chunk messages into groups of 40
+    const messageChunks = chunkArray(allMessages, 40)
     console.log(`Split into ${messageChunks.length} chunks`)
 
     const chunkSummaries = []
@@ -73,7 +93,7 @@ export async function POST(req) {
       console.log(`Summarizing chunk ${i + 1} of ${messageChunks.length}`)
 
       const chunkText = chunk.map((m, idx) =>
-        `[${idx + 1}] (from: ${m.title})\n${m.text.slice(0, 300)}`
+        `[${idx + 1}] ${m.period ? `(${m.period})` : ''} ${m.title}\n${m.text.slice(0, 250)}`
       ).join('\n\n')
 
       const prompt = `You are reading someone's personal AI conversation messages.
@@ -84,43 +104,42 @@ ${chunkText}
 
 Find the messages that reveal something real and personal — emotions, struggles, goals, fears, decisions, relationships, career, money, identity, mental health.
 
-Write 2-4 sentences summarizing the most meaningful personal themes you see in this batch. Focus on what the person was really feeling or going through underneath the surface.
+Note any time periods mentioned (like "Early 2023" or "Summer 2024") as they help build a timeline.
 
-If this batch is purely technical or factual with nothing personal, just write "No personal content in this batch."
+Write 2-4 sentences summarizing the most meaningful personal themes in this batch. Include the time period if available.
 
-Return ONLY your summary, nothing else.`
+If purely technical, write "No personal content."
+
+Return ONLY your summary.`
 
       try {
         const summary = await callOpenAI(prompt, 300)
         if (summary && !summary.includes('No personal content')) {
           chunkSummaries.push(summary.trim())
-          console.log(`Chunk ${i + 1} summary: ${summary.slice(0, 80)}...`)
-        } else {
-          console.log(`Chunk ${i + 1}: no personal content, skipping`)
         }
       } catch (err) {
         console.log(`Chunk ${i + 1} failed:`, err.message)
       }
     }
 
-    console.log(`Got ${chunkSummaries.length} meaningful chunk summaries`)
+    console.log(`Got ${chunkSummaries.length} summaries`)
 
     if (chunkSummaries.length === 0) {
       return Response.json({
-        error: 'No personal content found in your conversations. Try a different file that has more personal discussions.'
+        error: 'No personal content found. Try a file with more personal conversations.'
       }, { status: 400 })
     }
 
-    // Step 4 — If too many summaries, consolidate them first
+    // Step 4 — Consolidate if too many summaries
     let finalSummaries = chunkSummaries
 
-    if (chunkSummaries.length > 20) {
-      console.log('Too many summaries, consolidating...')
-      const summaryChunks = chunkArray(chunkSummaries, 10)
+    if (chunkSummaries.length > 15) {
+      console.log('Consolidating summaries...')
+      const summaryChunks = chunkArray(chunkSummaries, 8)
       finalSummaries = []
 
       for (let i = 0; i < summaryChunks.length; i++) {
-        const prompt = `Consolidate these summaries of someone's personal AI conversations into 3-4 sentences capturing the most important themes:
+        const prompt = `Consolidate these summaries into 3-4 sentences. Preserve any time periods or dates mentioned:
 
 ${summaryChunks[i].join('\n\n')}
 
@@ -130,64 +149,79 @@ Return ONLY the consolidated summary.`
           const consolidated = await callOpenAI(prompt, 400)
           if (consolidated) finalSummaries.push(consolidated)
         } catch (err) {
-          console.log(`Consolidation chunk ${i + 1} failed:`, err.message)
+          console.log(`Consolidation ${i + 1} failed:`, err.message)
         }
       }
-      console.log(`Consolidated to ${finalSummaries.length} final summaries`)
     }
 
     // Step 5 — Generate the Life Book
     console.log('Generating Life Book...')
 
     const allSummariesText = finalSummaries.join('\n\n---\n\n')
+    const timelineContext = sortedPeriods.length > 0
+      ? `The conversations span these time periods: ${sortedPeriods.join(', ')}.`
+      : 'No specific dates were found in the data.'
 
-    const finalPrompt = `You are writing someone's personal Life Book based on a deep analysis of everything they have ever said to an AI.
+    const finalPrompt = `You are writing someone's personal Life Book — a brutally honest autobiography based on everything they have ever said to an AI.
+
+${timelineContext}
 
 Here is the complete analysis of their conversation history:
 
 ${allSummariesText}
 
-This represents their real thoughts, fears, goals, struggles, and desires expressed over time to an AI. 
+CRITICAL RULES:
+1. Write in SECOND PERSON — use "you" and "your" throughout. NEVER say "they" or "this individual" or "the person." Talk directly TO them.
+2. Write like a close friend who read everything — direct, warm, uncomfortably accurate
+3. Each chapter should cover a SPECIFIC TIME PERIOD if dates are available — like "In the spring of 2023..." or "By late 2024..."
+4. Make it read like a BOOK — narrative, flowing, emotional — not a report or bullet points
+5. Be specific to what you actually read — no generic statements
+6. The person reading should feel "how did it know that about me?"
 
-Write a deeply personal, brutally honest Life Book. Be specific to THIS person based on what you read. Make it feel like someone who truly knows them wrote it. The person reading this should feel "how did it know that about me?" not "this is generic."
+Example of good tone: "You spent most of early 2023 asking the same question in different ways. Not about your career — about whether you were capable of having one."
 
-Respond ONLY with valid JSON, no markdown, no backticks, no extra text:
+Example of bad tone: "This individual struggled with career uncertainty during this period."
+
+Respond ONLY with valid JSON, no markdown, no backticks:
 {
   "chapters": [
     {
       "number": "I",
-      "title": "Specific evocative title based on what you actually read",
-      "summary": "3-4 paragraphs written like a biographer who read everything. What were they really going through? What did they keep circling back to? What were they afraid to say directly? Reference specific themes you found. Be narrative and personal, not generic."
+      "title": "Specific evocative title with time period if available — e.g. 'Early 2023: The Question You Kept Asking'",
+      "period": "Early 2023",
+      "summary": "3-4 paragraphs written directly TO the person using 'you' and 'your'. Written like a book — narrative, flowing, personal. What were YOU really going through? What did YOU keep circling back to? Reference specific themes found. Start with something like 'You were...' or 'In the spring of 2023, you...'"
     },
     {
       "number": "II",
-      "title": "Specific evocative title",
-      "summary": "3-4 paragraphs about another major theme from their history."
+      "title": "Specific title with time period",
+      "period": "Mid 2024",
+      "summary": "3-4 paragraphs in second person about another major theme or time period."
     },
     {
       "number": "III",
-      "title": "Specific evocative title",
-      "summary": "3-4 paragraphs about a third major theme."
+      "title": "Specific title with time period",
+      "period": "Late 2024",
+      "summary": "3-4 paragraphs in second person about a third theme or time period."
     }
   ],
   "insights": [
-    "Brutally honest insight that stings a little — specific to what you read, not generic",
-    "Another uncomfortable truth about how they actually think based on their messages",
-    "Specific insight about how they make decisions based on patterns you found",
-    "Insight about what they consistently avoid or run from",
-    "Insight about the gap between what they say they want and what they actually keep doing"
+    "Brutally honest insight written to them directly — starts with 'You...' — specific to what you read",
+    "Another uncomfortable truth — starts with 'You...'",
+    "Specific insight about how YOU make decisions",
+    "Insight about what YOU consistently avoid",
+    "The gap between what you say you want and what you actually keep doing"
   ],
   "patterns": [
-    "Specific recurring behavioral pattern you found across their messages",
-    "Recurring emotional cycle or trigger based on what you read",
-    "Pattern in how they approach problems — specific to them",
-    "Something they keep returning to over and over",
-    "Pattern in their relationship with themselves based on their messages"
+    "Specific recurring pattern — written as 'You do X when Y happens'",
+    "Recurring emotional cycle — specific to what you found",
+    "Pattern in how YOU approach problems",
+    "Something YOU keep returning to over and over",
+    "Pattern in YOUR relationship with yourself"
   ],
   "stats": {
     "conversations_analyzed": ${conversations.length},
     "total_conversations": ${totalCount},
-    "dominant_theme": "Single most dominant theme of their life in one punchy specific phrase"
+    "dominant_theme": "Single most dominant theme in one punchy phrase"
   }
 }`
 
@@ -197,7 +231,7 @@ Respond ONLY with valid JSON, no markdown, no backticks, no extra text:
       return Response.json({ error: 'AI did not return a response. Try again.' }, { status: 500 })
     }
 
-    console.log('Life Book generated successfully')
+    console.log('Life Book generated')
 
     const cleanJson = resultText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
     const result = JSON.parse(cleanJson)
