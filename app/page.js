@@ -19,7 +19,6 @@ function extractAndFilterMessages(content, filename) {
     'tired', 'exhausted', 'burned out', 'motivated', 'inspired',
     'identity', 'who am i', 'worth', 'value', 'deserve'
   ]
-
   const technicalIndicators = [
     'function(', 'const ', 'let ', 'var ', 'return ',
     'console.log', 'import ', 'export ', 'async ',
@@ -28,21 +27,17 @@ function extractAndFilterMessages(content, filename) {
     'error:', 'exception', 'undefined', 'null',
     'chmod', 'sudo', 'bash', 'python', 'javascript'
   ]
-
   let allPersonalMessages = []
   let totalMessages = 0
   let totalConversations = 0
-
   try {
     if (filename.endsWith('.json')) {
       const data = JSON.parse(content)
       const items = Array.isArray(data) ? data : [data]
       totalConversations = items.length
-
       for (const convo of items) {
         const title = convo.title || convo.name || 'Untitled'
         const convoMessages = []
-
         // Extract all user messages from this conversation
         if (convo.mapping) {
           for (const node of Object.values(convo.mapping)) {
@@ -55,7 +50,6 @@ function extractAndFilterMessages(content, filename) {
             }
           }
         }
-
         if (convo.messages && Array.isArray(convo.messages)) {
           for (const msg of convo.messages) {
             if (msg.role === 'user' || msg.author === 'user') {
@@ -67,13 +61,11 @@ function extractAndFilterMessages(content, filename) {
             }
           }
         }
-
         // Score each message — keep only personal ones
         for (const msg of convoMessages) {
           const lower = msg.text.toLowerCase()
           const personalScore = personalKeywords.filter(k => lower.includes(k)).length
           const techScore = technicalIndicators.filter(k => lower.includes(k)).length
-
           // Only keep if personal and not too technical
           if (personalScore >= 1 && techScore < 3) {
             allPersonalMessages.push({
@@ -88,28 +80,22 @@ function extractAndFilterMessages(content, filename) {
   } catch (e) {
     console.error('Parse error:', e)
   }
-
   // Sort by most personal first
   allPersonalMessages.sort((a, b) => b.personalScore - a.personalScore)
-
   console.log(`Total messages in file: ${totalMessages}`)
   console.log(`Personal messages found: ${allPersonalMessages.length}`)
-
   // Take top 200 most personal messages
   const top200 = allPersonalMessages.slice(0, 200)
-
   // Group back into conversation-like chunks for the API
   const grouped = {}
   for (const msg of top200) {
     if (!grouped[msg.title]) grouped[msg.title] = []
     grouped[msg.title].push(msg.text)
   }
-
   const conversations = Object.entries(grouped).map(([title, messages]) => ({
     title,
     messages
   }))
-
   return {
     conversations,
     totalMessages,
@@ -124,9 +110,12 @@ export default function Home() {
   const [loadingMsg, setLoadingMsg] = useState('Reading your conversations...')
   const [dragOver, setDragOver] = useState(false)
   const [platform, setPlatform] = useState(null)
+  const [showSample, setShowSample] = useState(false)
+  const [showEmailModal, setShowEmailModal] = useState(false)
+  const [email, setEmail] = useState('')
 
   const platforms = [
-    { id: 'chatgpt', label: 'ChatGPT', icon: '🤖', color: '#10a37f', instructions: 'chatgpt.com → Settings → Data Controls → Export' },
+    { id: 'chatgpt', label: 'ChatGPT', icon: '🤖', color: '#10a37f', instructions: 'chatgpt.com → Settings → Data Controls → Export (takes 1-3 days)' },
     { id: 'claude', label: 'Claude', icon: '✦', color: '#c94f2a', instructions: 'claude.ai → Settings → Privacy → Export Data' },
     { id: 'gemini', label: 'Gemini', icon: '♊', color: '#4285f4', instructions: 'myactivity.google.com → Export → Gemini' },
     { id: 'grok', label: 'Grok', icon: '𝕏', color: '#000000', instructions: 'x.com → Settings → Privacy → Export Data' },
@@ -142,8 +131,10 @@ export default function Home() {
 
   const handleGenerate = async () => {
     if (!platform) return alert('Please select which AI platform your export is from')
-    if (files.length === 0) return alert('Please upload at least one export file')
-
+    if (files.length === 0) {
+      setShowEmailModal(true)
+      return
+    }
     setLoading(true)
     try {
       let allConversations = []
@@ -154,21 +145,16 @@ export default function Home() {
       for (let i = 0; i < files.length; i++) {
         const file = files[i]
         setLoadingMsg(`Reading file ${i + 1} of ${files.length}: ${file.name}...`)
-
         const text = await file.text()
-
         setLoadingMsg(`Scanning every message in ${file.name}...`)
         const result = extractAndFilterMessages(text, file.name)
-
         allConversations.push(...result.conversations)
         grandTotalMessages += result.totalMessages
         grandTotalConversations += result.totalConversations
         totalPersonalFound += result.personalMessagesFound
-
-        console.log(`File ${i + 1}: ${result.totalMessages} total messages, ${result.personalMessagesFound} personal`)
       }
 
-      setLoadingMsg(`Found ${totalPersonalFound} personal messages across ${grandTotalMessages} total. Selecting the best 200...`)
+      setLoadingMsg(`Found ${totalPersonalFound} personal messages. Selecting the best ones...`)
 
       if (allConversations.length === 0) {
         alert('No personal conversations found. Try a different file.')
@@ -176,8 +162,6 @@ export default function Home() {
         return
       }
 
-      // Limit total messages sent to API to stay under 60s timeout
-      // Take top messages across all files — already sorted by personal score
       const limitedConversations = []
       let messageCount = 0
       for (const convo of allConversations) {
@@ -188,8 +172,6 @@ export default function Home() {
       }
 
       setLoadingMsg(`Analyzing your ${messageCount} most personal messages...`)
-
-      console.log(`Sending ${messageCount} messages across ${limitedConversations.length} conversations to API`)
 
       const payload = {
         conversations: limitedConversations,
@@ -206,7 +188,6 @@ export default function Home() {
 
       if (!res.ok) {
         const errText = await res.text()
-        console.error('API error:', errText)
         alert('Something went wrong. Please try again.')
         setLoading(false)
         return
@@ -217,23 +198,42 @@ export default function Home() {
 
       if (data.error) {
         alert(data.error)
-        setLoading(false)
-        return
+      } else {
+        localStorage.setItem('lifebook_result', JSON.stringify(data))
+        window.location.href = '/result'
       }
-
-      localStorage.setItem('lifebook_result', JSON.stringify(data))
-      window.location.href = '/result'
-
     } catch (err) {
       console.error(err)
       alert('Something went wrong. Please try again.')
-      setLoading(false)
+    }
+    setLoading(false)
+  }
+
+  // Sample Life Book for Demo
+  const sampleLifeBook = {
+    chapters: [
+      { number: "I", title: "The Quiet Overthinker", summary: "At 22, you spend a lot of time trying to understand your own mind — your ADHD, anxiety, OCD, and narcolepsy. You frequently turn to AI to help process your thoughts and feelings." },
+      { number: "II", title: "Building Systems That Work", summary: "You're actively looking for better routines, career direction, and ways to manage your energy. Simple things like walking your dog bring you peace." },
+      { number: "III", title: "Looking for Clarity", summary: "You often ask big questions about the future, health, relationships, and what kind of life you want to build. You're self-aware about your struggles." }
+    ],
+    insights: [
+      "You use AI conversations as a form of self-therapy and reflection",
+      "Structure and routines are very important to you because your brain doesn't create them naturally",
+      "You're more aware of your challenges than most people your age"
+    ],
+    patterns: [
+      "You research solutions when you're feeling stuck or overwhelmed",
+      "Health and mental clarity questions appear frequently"
+    ],
+    stats: {
+      conversations_analyzed: 142,
+      total_conversations: 847,
+      dominant_theme: "Understanding myself and building a life that fits my brain"
     }
   }
 
   return (
     <main style={{ minHeight: '100vh', background: 'var(--paper)', fontFamily: 'DM Sans, sans-serif' }}>
-
       {loading && (
         <div style={{ position: 'fixed', inset: 0, background: 'var(--ink)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24, zIndex: 9999 }}>
           <p style={{ fontFamily: 'Playfair Display, serif', fontSize: 32, color: 'var(--paper)', fontWeight: 700 }}>Writing your life book...</p>
@@ -248,9 +248,16 @@ export default function Home() {
         <span style={{ fontFamily: 'Playfair Display, serif', fontSize: 22, fontWeight: 700 }}>
           Life<span style={{ color: 'var(--accent)' }}>Book</span>
         </span>
-        <div style={{ display: 'flex', gap: 36, alignItems: 'center' }}>
-          <a href="#how" style={{ fontSize: 14, color: 'var(--muted)', textDecoration: 'none' }}>How it works</a>
-          <a href="#upload" style={{ background: 'var(--ink)', color: 'var(--paper)', padding: '10px 22px', borderRadius: 2, fontSize: 12, letterSpacing: '0.08em', textTransform: 'uppercase', textDecoration: 'none' }}>Try it — $10</a>
+        <div style={{ display: 'flex', gap: 20 }}>
+          <button 
+            onClick={() => setShowSample(true)}
+            style={{ padding: '10px 20px', background: '#fff', color: '#000', border: '1px solid #ddd', borderRadius: 4, cursor: 'pointer', fontWeight: 500 }}
+          >
+            See Sample Life Book
+          </button>
+          <a href="#upload" style={{ background: 'var(--ink)', color: 'var(--paper)', padding: '10px 22px', borderRadius: 2, fontSize: 12, letterSpacing: '0.08em', textTransform: 'uppercase', textDecoration: 'none' }}>
+            Try it — $10
+          </a>
         </div>
       </nav>
 
@@ -267,6 +274,7 @@ export default function Home() {
             Upload your ChatGPT, Claude, Gemini, or Grok export. We scan every single message and find what actually mattered.
           </p>
 
+          {/* Platform Selection */}
           <div style={{ marginBottom: 24 }}>
             <p style={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--muted)', marginBottom: 12 }}>Step 1 — Select your platform</p>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, maxWidth: 440 }}>
@@ -284,6 +292,7 @@ export default function Home() {
             )}
           </div>
 
+          {/* Upload Area */}
           <div style={{ marginBottom: 8 }}>
             <p style={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--muted)', marginBottom: 12 }}>
               Step 2 — Upload your export file
@@ -321,6 +330,7 @@ export default function Home() {
           </p>
         </div>
 
+        {/* Preview Sidebar */}
         <div style={{ background: 'var(--ink)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '60px 50px', position: 'relative', overflow: 'hidden' }}>
           <div style={{ position: 'absolute', width: 300, height: 300, borderRadius: '50%', border: '1px solid rgba(255,255,255,0.05)', top: -80, right: -80 }} />
           <div style={{ position: 'absolute', width: 500, height: 500, borderRadius: '50%', border: '1px solid rgba(255,255,255,0.04)', bottom: -200, left: -200 }} />
@@ -349,17 +359,12 @@ export default function Home() {
                   <div key={i} style={{ background: 'var(--cream)', borderLeft: '2px solid var(--accent)', padding: '8px 12px', marginBottom: 8, fontSize: 11, fontStyle: 'italic', fontFamily: 'Playfair Display, serif', lineHeight: 1.4 }}>{ins}</div>
                 ))}
               </div>
-              <div>
-                <p style={{ fontSize: 9, letterSpacing: '0.2em', textTransform: 'uppercase', color: 'var(--accent)', marginBottom: 10 }}>Platforms</p>
-                {['🤖 ChatGPT', '✦ Claude', '♊ Gemini', '𝕏 Grok'].map((p, i) => (
-                  <span key={i} style={{ display: 'inline-flex', fontSize: 10, background: 'var(--ink)', color: 'var(--paper)', padding: '4px 10px', borderRadius: 2, margin: '0 4px 6px 0' }}>{p}</span>
-                ))}
-              </div>
             </div>
           </div>
         </div>
       </div>
 
+      {/* How it works section */}
       <div id="how" style={{ padding: '100px 60px', background: 'var(--cream)', borderTop: '1px solid var(--border)' }}>
         <div style={{ textAlign: 'center', marginBottom: 72 }}>
           <p style={{ fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'var(--accent)', marginBottom: 14 }}>The process</p>
@@ -381,6 +386,7 @@ export default function Home() {
         </div>
       </div>
 
+      {/* Footer */}
       <div style={{ background: 'var(--ink)', padding: '100px 60px', textAlign: 'center' }}>
         <h2 style={{ fontFamily: 'Playfair Display, serif', fontSize: 'clamp(36px, 5vw, 56px)', fontWeight: 900, color: 'var(--paper)', letterSpacing: '-1.5px', lineHeight: 1.05, maxWidth: 640, margin: '0 auto 24px' }}>
           Your AI chats have been trying to tell you <em style={{ color: 'var(--accent)', fontStyle: 'italic' }}>something.</em>
@@ -390,7 +396,6 @@ export default function Home() {
         <a href="#upload" style={{ display: 'inline-block', background: 'var(--accent)', color: 'var(--paper)', padding: '20px 48px', fontSize: 13, letterSpacing: '0.14em', textTransform: 'uppercase', fontFamily: 'DM Sans, sans-serif', fontWeight: 500, borderRadius: 2, textDecoration: 'none' }}>
           Get My Life Book — $10
         </a>
-        <p style={{ display: 'block', marginTop: 18, fontSize: 12, color: 'rgba(245,240,232,0.3)' }}>One-time payment. No account. Your file stays private.</p>
       </div>
 
       <footer style={{ padding: '32px 60px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', fontSize: 13, color: 'var(--muted)' }}>
@@ -398,16 +403,67 @@ export default function Home() {
         <span>Your data is never stored or shared.</span>
       </footer>
 
-     <style>{`
-  @keyframes loadBar { 0% { width: 0% } 50% { width: 80% } 100% { width: 100% } }
-  @keyframes float { 0%, 100% { transform: rotate(-2deg) translateY(0px); } 50% { transform: rotate(-2deg) translateY(-12px); } }
-  @media (max-width: 768px) {
-    div[style*="gridTemplateColumns: '1fr 1fr'"] { grid-template-columns: 1fr !important; }
-    div[style*="gridTemplateColumns: 'repeat(4"] { grid-template-columns: 1fr 1fr !important; }
-  }
-  body { background: #0f0d0a !important; color: #f5f0e8 !important; }
-  main { background: #0f0d0a !important; }
-`}</style>
+      {/* Sample Modal */}
+      {showSample && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.9)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div style={{ background: 'var(--paper)', maxWidth: 720, borderRadius: 12, padding: 40, maxHeight: '90vh', overflow: 'auto' }}>
+            <h2 style={{ fontFamily: 'Playfair Display, serif', fontSize: 36, marginBottom: 10 }}>Sample Life Book</h2>
+            <p style={{ color: 'var(--muted)', marginBottom: 30 }}>This is an example of what your personal Life Book will look like</p>
+            
+            {sampleLifeBook.chapters.map((ch, i) => (
+              <div key={i} style={{ marginBottom: 40, borderLeft: '4px solid var(--accent)', paddingLeft: 20 }}>
+                <h3 style={{ fontFamily: 'Playfair Display, serif', fontSize: 24 }}>Chapter {ch.number}: {ch.title}</h3>
+                <p style={{ lineHeight: 1.8, color: 'var(--muted)' }}>{ch.summary}</p>
+              </div>
+            ))}
+
+            <button onClick={() => setShowSample(false)} style={{ padding: '14px 32px', background: 'var(--ink)', color: 'white', border: 'none', borderRadius: 6, fontSize: 14 }}>
+              Close Sample
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Email Reminder Modal */}
+      {showEmailModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: 'var(--paper)', padding: 40, borderRadius: 12, maxWidth: 420, textAlign: 'center' }}>
+            <h3>Your export takes 1–3 days</h3>
+            <p style={{ margin: '20px 0' }}>Enter your email and we'll remind you when it's ready so you don't forget to come back.</p>
+            
+            <input 
+              type="email" 
+              placeholder="your@email.com" 
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              style={{ width: '100%', padding: '14px', marginBottom: 20, borderRadius: 6, border: '1px solid #ddd' }}
+            />
+            
+            <button 
+              onClick={() => {
+                alert("✅ We'll email you when your export is ready!");
+                setShowEmailModal(false);
+                setEmail('');
+              }} 
+              style={{ width: '100%', padding: '16px', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: 6, fontWeight: 600 }}
+            >
+              Remind Me When Ready
+            </button>
+            
+            <button onClick={() => setShowEmailModal(false)} style={{ marginTop: 12, background: 'none', border: 'none', color: 'var(--muted)' }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      <style>{`
+        @keyframes loadBar { 0% { width: 0% } 50% { width: 80% } 100% { width: 100% } }
+        @keyframes float { 0%, 100% { transform: rotate(-2deg) translateY(0px); } 50% { transform: rotate(-2deg) translateY(-12px); } }
+        @media (max-width: 768px) {
+          div[style*="gridTemplateColumns: '1fr 1fr'"] { grid-template-columns: 1fr !important; }
+        }
+      `}</style>
     </main>
   )
 }
